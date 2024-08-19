@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  python_app:
+    build: .
+    volumes:
+       - ./code:/app/code
+    env_file:
+      - .env
