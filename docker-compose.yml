@@ -2,9 +2,23 @@ version: '3.8'
 
 services:
   bot_service:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
     volumes:
        - ./app:/app
     env_file:
       - .env
     restart: on-failure
+
+  migration_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.migration
+    volumes:
+      - ./:/app
+    environment:
+      - DATABASE_URL=sqlite:///app/database.db
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      - bot_service

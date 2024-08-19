@@ -2,3 +2,8 @@
 .env
 *.session-journal
 *.db
+
+__pycache__/
+alembic/__pycache__/
+app/__pycache__/
+*.pyc
