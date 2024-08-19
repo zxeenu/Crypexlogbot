@@ -1,2 +1,6 @@
-pyrogram
-tgcrypto
+pyaes==1.6.1
+Pyrogram==2.0.106
+PySocks==1.7.1
+setuptools==72.1.0
+TgCrypto==1.2.5
+wheel==0.44.0

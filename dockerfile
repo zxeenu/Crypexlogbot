@@ -5,7 +5,8 @@ FROM python:3.12-alpine
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache gcc musl-dev python3-dev
+# RUN apk add --no-cache gcc musl-dev python3-dev
+RUN apk add --no-cache gcc musl-dev
 
 # Install any needed packages specified in requirements.txt
 COPY requirements.txt /app/
