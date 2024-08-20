@@ -9,6 +9,7 @@ class Sell(Base):
     id = Column(Integer, primary_key=True)
     qty = Column(Float, nullable=False)
     rate = Column(Float, nullable=False)
+    buy_rate = Column(Float)
     user_id = Column(Integer)
     deleted_at = Column(DateTime)
     created_at = Column(DateTime, default=func.now())

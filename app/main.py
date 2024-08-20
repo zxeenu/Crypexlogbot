@@ -14,10 +14,12 @@ app = PyrogramClient
 
 @app.on_message(filters.command ('help', '/'))
 async def handle_help_command(client: Client, message: Message):
-    help_string = """--- Help ----
-    /sell {sell_qty} {sell_rate} - Adds a sell entry timestamped for today
+    help_string = """--- Help ----\n
+    /sell {sell_qty} {sell_rate} {buy_rate} - Adds a sell entry timestamped for today
+    /sell_b {sell_qty} {sell_rate} - Adds a sell entry timestamped for today
     /buy {buy_qty} {buy_rate} - Adds a buy entry timestamped for today
-    /profit {day-month-year} - Calculates profit for a given date
+    /profit {?day-month-year} - Calculates profit for a given date
+    /transaction_profit {?day-month-year} - Calculates sum of transaction profits for a given date
     /log - Gives you 5 latest buy and sell data
     /dump {day-month-year} - Gives you your DB as a CSV
     """
@@ -27,6 +29,45 @@ async def handle_help_command(client: Client, message: Message):
 
 
 @app.on_message(filters.command ('sell', '/'))
+async def handle_sell_command(client: Client, message: Message):
+    # help_string = "/sell {sell_qty} {sell_rate} {buy_rate}"
+
+    message_user_id = message.from_user.id
+    command_array = message.command
+    current_time = message.date # utc time
+    maldives_time = current_time + timedelta(hours=5)
+
+    command_array_len = len(command_array)
+    if (command_array_len != 4):
+        await message.reply("Invalid args: 4 expected", message_user_id)
+        return
+
+    sell_qty_str = command_array[1]
+    sell_rate_str = command_array[2]
+    buy_rate_str = command_array[3]
+
+    try:
+        sell_qty = float(sell_qty_str)
+        sell_rate = float(sell_rate_str)
+        buy_rate = float(buy_rate_str)
+    except ValueError:
+        await message.reply("Invalid args: could not be converted to floats", message_user_id)
+        return
+
+    db = SessionLocal()
+    try:
+        sell_record = Sell(qty=sell_qty, rate=sell_rate, buy_rate=buy_rate, user_id=message_user_id, deleted_at=None, created_at=maldives_time)
+        db.add(sell_record)
+        db.commit()
+        db.refresh(sell_record)
+        transaction_profit = (sell_record.rate * sell_record.qty) - (sell_record.buy_rate * sell_record.qty) 
+        return_data = f"Sell ID: {sell_record.id}\nQty: {sell_record.qty}\nRate (MVR): {sell_record.rate}\nBuy Rate (MVR): {sell_record.buy_rate}\nAction At: {maldives_time}\nTransactional Profit (MVR): {transaction_profit}\nTransaction Recorded."
+    finally:
+        db.close()
+
+    await message.reply(return_data, message_user_id)
+
+@app.on_message(filters.command ('sell_b', '/'))
 async def handle_sell_command(client: Client, message: Message):
     # help_string = "/sell {sell_qty} {sell_rate}"
 
@@ -56,11 +97,10 @@ async def handle_sell_command(client: Client, message: Message):
         db.add(sell_record)
         db.commit()
         db.refresh(sell_record)
-        return_data = f"Sell ID: {sell_record.id}\nQty: {sell_record.qty}\nRate: {sell_record.rate}\nAction At: {maldives_time}\nTransaction Recorded."
+        return_data = f"Sell ID: {sell_record.id}\nQty: {sell_record.qty}\nRate (MVR): {sell_record.rate}\nAction At: {maldives_time}\nTransaction Recorded."
     finally:
         db.close()
 
-    # await app.send_message(chatid, table_data)
     await message.reply(return_data, message_user_id)
 
 @app.on_message(filters.command ('buy', '/'))
@@ -93,7 +133,7 @@ async def handle_buy_command(client: Client, message: Message):
         db.add(buy_record)
         db.commit()
         db.refresh(buy_record)
-        return_data = f"Buy ID: {buy_record.id}\nQty: {buy_record.qty}\nRate: {buy_record.rate}\nAction At: {maldives_time}\nTransaction Recorded."
+        return_data = f"Buy ID: {buy_record.id}\nQty: {buy_record.qty}\nRate (MVR): {buy_record.rate}\nAction At: {maldives_time}\nTransaction Recorded."
     finally:
         db.close()
 
@@ -114,28 +154,38 @@ async def handle_log_command(client: Client, message: Message):
 
     return_data = "---Sell Log---\n"
     for sell in latest_sells:
-        return_data+=f"Sell ID: {sell.id}, Qty: {sell.qty}, Rate: {sell.rate}\n"
+        if sell.buy_rate is not None:
+            buy_rate = sell.buy_rate
+            transaction_profit = (sell.rate * sell.qty) - (buy_rate * sell.qty) 
+            return_data+=f"Sell ID: {sell.id}, Qty: {sell.qty}, Rate (MVR): {sell.rate}, Buy Rate (MVR): {buy_rate}, T-Profit (MVR): {transaction_profit}\n"
+        else:
+            return_data+=f"Sell ID: {sell.id}, Qty: {sell.qty}, Rate (MVR): {sell.rate}, Buy Rate (MVR): N/A, T-Profit (MVR): N/A\n"
 
     return_data += "\n---Buy Log---\n"
     for buy in latest_buys:
-        return_data+=f"Buy ID: {buy.id}, Qty: {buy.qty}, Rate: {buy.rate}\n"
+        return_data+=f"Buy ID: {buy.id}, Qty: {buy.qty}, Rate (MVR): {buy.rate}\n"
 
     await message.reply(return_data, message_user_id)
 
 @app.on_message(filters.command ('profit', '/'))
 async def handle_profit_command(client: Client, message: Message):
-    # help_string = "/profit {day-month-year}"
+    # help_string = "/profit {?day-month-year}"
 
     message_user_id = message.from_user.id
     command_array = message.command
 
     command_array_len = len(command_array)
-    if (command_array_len != 2):
-        await message.reply("Invalid args: 2 expected", message_user_id)
+    if command_array_len not in (1, 2):
+        await message.reply("Invalid args: 1 or none expected", message_user_id)
         return
 
     date_format = "%d-%m-%Y" 
-    profit_calculation_date_str = command_array[1]
+
+    if len(command_array) > 1:
+        profit_calculation_date_str = command_array[1]
+    else:
+        current_maldives_time = datetime.today() + timedelta(hours=5)
+        profit_calculation_date_str = current_maldives_time.strftime(date_format)
 
     try:
         profit_calculation_date = datetime.strptime(profit_calculation_date_str, date_format)
@@ -174,11 +224,63 @@ async def handle_profit_command(client: Client, message: Message):
         
     return_data = "---Profit Log---\n"
     return_data += f"Date: {query_date}\n"
-    return_data += f"Total Buy: {total_buy}\n"
-    return_data += f"Total Sell: {total_sell}\n"
+    return_data += f"Total Buy (MVR): {total_buy}\n"
+    return_data += f"Total Sell (MVR): {total_sell}\n"
     return_data += "------------------------\n"
 
-    return_data += f"Profit: {total_sell - total_buy}\n"
+    return_data += f"Profit (MVR): {total_sell - total_buy}\n"
+    await message.reply(return_data, message_user_id)
+
+@app.on_message(filters.command ('transaction_profit', '/'))
+async def handle_profit_command(client: Client, message: Message):
+    # help_string = "/transaction-profit {?day-month-year}"
+
+    message_user_id = message.from_user.id
+    command_array = message.command
+
+    command_array_len = len(command_array)
+    if command_array_len not in (1, 2):
+        await message.reply("Invalid args: 1 or none expected", message_user_id)
+        return
+
+    date_format = "%d-%m-%Y" 
+
+    if len(command_array) > 1:
+        profit_calculation_date_str = command_array[1]
+    else:
+        current_maldives_time = datetime.today() + timedelta(hours=5)
+        profit_calculation_date_str = current_maldives_time.strftime(date_format)
+
+    try:
+        profit_calculation_date = datetime.strptime(profit_calculation_date_str, date_format)
+    except ValueError:
+        await message.reply("Invalid args: could not be converted to floats", message_user_id)
+        return
+   
+    db = SessionLocal()
+    try:
+        query_date = profit_calculation_date.date()
+        sell_records = db.query(Sell).filter(
+            and_(
+                func.date(Sell.created_at) == query_date,
+                Sell.user_id == message_user_id,
+                Sell.deleted_at.is_(None) 
+            )
+        ).all()
+    finally:
+        db.close()
+
+
+    total_t_profit = 0.0
+    for sell in sell_records:
+        if sell.buy_rate is not None:
+            transaction_profit = (sell.rate * sell.qty) - (sell.buy_rate * sell.qty) 
+            total_t_profit += transaction_profit
+        
+    return_data = "---Profit Log---\n"
+    return_data += f"Date: {query_date}\n"
+    return_data += f"Total Transaction Profit (MVR): {total_t_profit}\n"
+
     await message.reply(return_data, message_user_id)
 
 @app.on_message(filters.command ('dump', '/'))
@@ -208,7 +310,7 @@ async def handle_dump_command(client: Client, message: Message):
     # Create a CSV writer object
     csvwriter = csv.writer(output)
 
-    header = ['id', 'created_at', 'user_id', 'qty', 'rate', 'deleted_at', 'type']
+    header = ['id', 'created_at', 'user_id', 'qty', 'rate', 'buy_rate', 'deleted_at', 'type']
     csvwriter.writerow(header)
 
     for record in sell_records:
@@ -218,6 +320,7 @@ async def handle_dump_command(client: Client, message: Message):
             record.user_id,
             record.qty,
             record.rate,
+            record.buy_rate,
             record.deleted_at, 
             'sell'
         ]
@@ -230,6 +333,7 @@ async def handle_dump_command(client: Client, message: Message):
             record.user_id,
             record.qty,
             record.rate,
+            None,
             record.deleted_at, 
             'buy'
         ]
